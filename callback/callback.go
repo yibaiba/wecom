@@ -1,6 +1,7 @@
 package callback
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -13,6 +14,10 @@ import (
 	"sort"
 	"strings"
 )
+
+// WeCom PKCS#7 pads AES-CBC plaintext to 32-byte multiples, not AES 16.
+// https://developer.work.weixin.qq.com/document/path/90968
+const pkcs7Block = 32
 
 // Callback verifies and decrypts WeCom application receive-message XML.
 type Callback struct {
@@ -86,7 +91,7 @@ func (c Callback) Encrypt(plain []byte) (string, error) {
 	buf = append(buf, lenbuf...)
 	buf = append(buf, plain...)
 	buf = append(buf, []byte(c.CorpID)...)
-	padded := pkcs7Pad(buf, aes.BlockSize)
+	padded := pkcs7Pad(buf, pkcs7Block)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
@@ -115,7 +120,7 @@ func (c Callback) decrypt(b64 string) ([]byte, error) {
 	}
 	plain := make([]byte, len(raw))
 	cipher.NewCBCDecrypter(block, key[:aes.BlockSize]).CryptBlocks(plain, raw)
-	plain, err = pkcs7Unpad(plain, aes.BlockSize)
+	plain, err = pkcs7Unpad(plain, pkcs7Block)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +142,7 @@ func (c Callback) decrypt(b64 string) ([]byte, error) {
 
 func pkcs7Pad(b []byte, block int) []byte {
 	n := block - (len(b) % block)
-	pad := bytesRepeat(byte(n), n)
-	return append(b, pad...)
+	return append(b, bytes.Repeat([]byte{byte(n)}, n)...)
 }
 
 func pkcs7Unpad(b []byte, block int) ([]byte, error) {
@@ -150,12 +154,4 @@ func pkcs7Unpad(b []byte, block int) ([]byte, error) {
 		return nil, fmt.Errorf("wecom pkcs7 pad")
 	}
 	return b[:len(b)-n], nil
-}
-
-func bytesRepeat(b byte, n int) []byte {
-	out := make([]byte, n)
-	for i := range out {
-		out[i] = b
-	}
-	return out
 }

@@ -1,9 +1,9 @@
 package wecom
 
 // Identity is the member or visitor after exchanging a WeCom authorization code.
-// Values come from user/get, user/getuserinfo (and auth/getuserinfo), and
-// auth/getuserdetail when those APIs return them. Empty means the corp app or
-// the member did not grant that field.
+// Values come from user/get, auth/getuserinfo, and auth/getuserdetail when
+// those APIs return them. Empty means the corp app or the member did not grant
+// that field. Email is the personal mailbox; BizMail is the corp mailbox.
 type Identity struct {
 	UserID           string `json:"userid,omitempty"`
 	Name             string `json:"name,omitempty"`
@@ -29,8 +29,8 @@ type Identity struct {
 	DirectLeader    []string        `json:"direct_leader,omitempty"`
 	OpenUserID      string          `json:"open_userid,omitempty"`
 	DeviceID        string          `json:"device_id,omitempty"`
-	UserTicket      string          `json:"user_ticket,omitempty"`
-	UserDocTicket   string          `json:"user_doc_ticket,omitempty"`
+	UserTicket      string          `json:"-"`
+	UserDocTicket   string          `json:"-"`
 	OpenID          string          `json:"openid,omitempty"`
 	ExternalUserID  string          `json:"external_userid,omitempty"`
 	ExtAttr         []ExtAttr       `json:"extattr,omitempty"`

@@ -3,38 +3,51 @@ package wecom
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
+func testProduction(t *testing.T, h http.HandlerFunc) Production {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return Production{
+		CorpID:  "ww",
+		Secret:  "s",
+		HTTP:    HTTPDoer{Client: srv.Client()},
+		BaseURL: srv.URL,
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	_ = json.NewEncoder(w).Encode(v)
+}
+
 func TestExchangeReadsEmailAndAvatar(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p := testProduction(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/cgi-bin/gettoken":
-			_ = json.NewEncoder(w).Encode(tokenResp{AccessToken: "tok", ErrCode: 0})
+			writeJSON(w, tokenResp{AccessToken: "tok", ErrCode: 0})
 		case "/cgi-bin/user/getuserinfo":
-			_ = json.NewEncoder(w).Encode(map[string]any{"UserId": "zhangsan", "errcode": 0, "user_ticket": "ticket-1"})
+			t.Errorf("legacy getuserinfo path")
+			http.NotFound(w, r)
+		case "/cgi-bin/auth/getuserinfo":
+			writeJSON(w, map[string]any{"UserId": "zhangsan", "errcode": 0, "user_ticket": "ticket-1"})
 		case "/cgi-bin/user/get":
-			_ = json.NewEncoder(w).Encode(userGetResp{
+			writeJSON(w, userGetResp{
 				ErrCode: 0, UserID: "zhangsan", Name: "张三", Email: "dir@example.com", Avatar: "https://img.example/dir.png",
 			})
 		case "/cgi-bin/auth/getuserdetail":
-			_ = json.NewEncoder(w).Encode(userDetailResp{
+			writeJSON(w, userDetailResp{
 				ErrCode: 0, Name: "张三", Email: "priv@example.com", Avatar: "https://img.example/priv.png", Mobile: "13800000000",
 			})
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer srv.Close()
-	origToken, origInfo, origUser, origDetail := getTokenURL, getUserInfoURL, getUserURL, getUserDetailURL
-	getTokenURL, getUserInfoURL, getUserURL, getUserDetailURL = srv.URL+"/cgi-bin/gettoken", srv.URL+"/cgi-bin/user/getuserinfo", srv.URL+"/cgi-bin/user/get", srv.URL+"/cgi-bin/auth/getuserdetail"
-	defer func() {
-		getTokenURL, getUserInfoURL, getUserURL, getUserDetailURL = origToken, origInfo, origUser, origDetail
-	}()
-
-	got, err := (Production{CorpID: "ww", Secret: "s", HTTP: HTTPDoer{Client: srv.Client()}}).Exchange(context.Background(), "code-1")
+	})
+	got, err := p.Exchange(context.Background(), "code-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,28 +60,23 @@ func TestExchangeReadsEmailAndAvatar(t *testing.T) {
 }
 
 func TestExchangeKeepsDirectoryProfileWithoutTicket(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p := testProduction(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/cgi-bin/gettoken":
-			_ = json.NewEncoder(w).Encode(tokenResp{AccessToken: "tok"})
-		case "/cgi-bin/user/getuserinfo":
-			_ = json.NewEncoder(w).Encode(map[string]any{"userid": "lisi", "errcode": 0})
+			writeJSON(w, tokenResp{AccessToken: "tok"})
+		case "/cgi-bin/auth/getuserinfo":
+			writeJSON(w, map[string]any{"userid": "lisi", "errcode": 0})
 		case "/cgi-bin/user/get":
-			_ = json.NewEncoder(w).Encode(userGetResp{Name: "李四", BizMail: "lisi@corp.com", ThumbAvatar: "https://img.example/lisi.png"})
+			writeJSON(w, userGetResp{Name: "李四", BizMail: "lisi@corp.com", ThumbAvatar: "https://img.example/lisi.png"})
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer srv.Close()
-	origToken, origInfo, origUser := getTokenURL, getUserInfoURL, getUserURL
-	getTokenURL, getUserInfoURL, getUserURL = srv.URL+"/cgi-bin/gettoken", srv.URL+"/cgi-bin/user/getuserinfo", srv.URL+"/cgi-bin/user/get"
-	defer func() { getTokenURL, getUserInfoURL, getUserURL = origToken, origInfo, origUser }()
-
-	got, err := (Production{CorpID: "ww", Secret: "s", HTTP: HTTPDoer{Client: srv.Client()}}).Exchange(context.Background(), "code-2")
+	})
+	got, err := p.Exchange(context.Background(), "code-2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.UserID != "lisi" || got.Email != "lisi@corp.com" || got.Avatar != "https://img.example/lisi.png" {
+	if got.UserID != "lisi" || got.Email != "" || got.Avatar != "https://img.example/lisi.png" {
 		t.Fatalf("identity %+v", got)
 	}
 	if got.BizMail != "lisi@corp.com" || got.ThumbAvatar != "https://img.example/lisi.png" {
@@ -78,12 +86,12 @@ func TestExchangeKeepsDirectoryProfileWithoutTicket(t *testing.T) {
 
 func TestExchangeMapsOfficialMemberPayload(t *testing.T) {
 	userGetCalled := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p := testProduction(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/cgi-bin/gettoken":
-			_ = json.NewEncoder(w).Encode(tokenResp{AccessToken: "tok"})
-		case "/cgi-bin/user/getuserinfo":
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			writeJSON(w, tokenResp{AccessToken: "tok"})
+		case "/cgi-bin/auth/getuserinfo":
+			writeJSON(w, map[string]any{
 				"errcode": 0, "UserId": "zhangsan", "DeviceId": "dev-1",
 				"open_userid": "open-from-info", "user_ticket": "ticket-1",
 				"user_doc_ticket": "doc-1",
@@ -92,7 +100,7 @@ func TestExchangeMapsOfficialMemberPayload(t *testing.T) {
 			userGetCalled++
 			_, _ = w.Write([]byte(officialUserGetJSON))
 		case "/cgi-bin/auth/getuserdetail":
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			writeJSON(w, map[string]any{
 				"errcode": 0, "userid": "zhangsan", "gender": "1",
 				"avatar":  "https://img.example/priv.png",
 				"qr_code": "https://open.work.weixin.qq.com/wwopen/userQRCode?vcode=priv",
@@ -102,11 +110,8 @@ func TestExchangeMapsOfficialMemberPayload(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer srv.Close()
-	swapWeComURLs(t, srv)
-
-	got, err := (Production{CorpID: "ww", Secret: "s", HTTP: HTTPDoer{Client: srv.Client()}}).Exchange(context.Background(), "code-full")
+	})
+	got, err := p.Exchange(context.Background(), "code-full")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,12 +123,12 @@ func TestExchangeMapsOfficialMemberPayload(t *testing.T) {
 
 func TestExchangeVisitorSkipsDirectory(t *testing.T) {
 	userGetCalled := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p := testProduction(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/cgi-bin/gettoken":
-			_ = json.NewEncoder(w).Encode(tokenResp{AccessToken: "tok"})
-		case "/cgi-bin/user/getuserinfo":
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			writeJSON(w, tokenResp{AccessToken: "tok"})
+		case "/cgi-bin/auth/getuserinfo":
+			writeJSON(w, map[string]any{
 				"errcode": 0, "openid": "oid-1", "external_userid": "ext-1", "DeviceId": "dev-ext",
 			})
 		case "/cgi-bin/user/get":
@@ -132,11 +137,8 @@ func TestExchangeVisitorSkipsDirectory(t *testing.T) {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
-	defer srv.Close()
-	swapWeComURLs(t, srv)
-
-	got, err := (Production{CorpID: "ww", Secret: "s", HTTP: HTTPDoer{Client: srv.Client()}}).Exchange(context.Background(), "code-ext")
+	})
+	got, err := p.Exchange(context.Background(), "code-ext")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,16 +150,43 @@ func TestExchangeVisitorSkipsDirectory(t *testing.T) {
 	}
 }
 
-func swapWeComURLs(t *testing.T, srv *httptest.Server) {
-	t.Helper()
-	origToken, origInfo, origUser, origDetail := getTokenURL, getUserInfoURL, getUserURL, getUserDetailURL
-	getTokenURL = srv.URL + "/cgi-bin/gettoken"
-	getUserInfoURL = srv.URL + "/cgi-bin/user/getuserinfo"
-	getUserURL = srv.URL + "/cgi-bin/user/get"
-	getUserDetailURL = srv.URL + "/cgi-bin/auth/getuserdetail"
-	t.Cleanup(func() {
-		getTokenURL, getUserInfoURL, getUserURL, getUserDetailURL = origToken, origInfo, origUser, origDetail
+func TestExchangeContinuesWhenUserOutOfScope(t *testing.T) {
+	p := testProduction(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cgi-bin/gettoken":
+			writeJSON(w, tokenResp{AccessToken: "tok"})
+		case "/cgi-bin/auth/getuserinfo":
+			writeJSON(w, map[string]any{"errcode": 0, "userid": "hidden", "user_ticket": "ticket-1"})
+		case "/cgi-bin/user/get":
+			writeJSON(w, map[string]any{"errcode": 81013, "errmsg": "user out of scope"})
+		case "/cgi-bin/auth/getuserdetail":
+			writeJSON(w, map[string]any{"errcode": 0, "userid": "hidden", "name": "隐身", "mobile": "13800000000"})
+		default:
+			http.NotFound(w, r)
+		}
 	})
+	got, err := p.Exchange(context.Background(), "code-hidden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UserID != "hidden" || got.Name != "隐身" || got.Mobile != "13800000000" {
+		t.Fatalf("identity %+v", got)
+	}
+}
+
+func TestExchangeReturnsAPIError(t *testing.T) {
+	p := testProduction(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/cgi-bin/gettoken" {
+			writeJSON(w, map[string]any{"errcode": 40013, "errmsg": "invalid corpid"})
+			return
+		}
+		http.NotFound(w, r)
+	})
+	_, err := p.Exchange(context.Background(), "code")
+	var e Error
+	if !errors.As(err, &e) || e.Code != 40013 {
+		t.Fatalf("err %v", err)
+	}
 }
 
 func assertFullMember(t *testing.T, got Identity) {

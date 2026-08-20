@@ -50,6 +50,8 @@ type Production struct {
 	Secret      string
 	HTTP        Doer
 	RedirectURI string
+	// BaseURL overrides APIBase when set (tests).
+	BaseURL string
 }
 
 // Doer is the injected HTTP client.

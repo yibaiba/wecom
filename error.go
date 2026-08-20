@@ -1,6 +1,9 @@
 package wecom
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // Error is a WeCom API errcode response.
 type Error struct {
@@ -16,8 +19,8 @@ func (e Error) Error() string {
 }
 
 func isTokenErr(err error) bool {
-	e, ok := err.(Error)
-	if !ok {
+	var e Error
+	if !errors.As(err, &e) {
 		return false
 	}
 	switch e.Code {
@@ -26,4 +29,13 @@ func isTokenErr(err error) bool {
 	default:
 		return false
 	}
+}
+
+// 81013: userid not in the app visible range. 60011: no privilege.
+func isDirectoryScopeErr(err error) bool {
+	var e Error
+	if !errors.As(err, &e) {
+		return false
+	}
+	return e.Code == 81013 || e.Code == 60011
 }

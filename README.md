@@ -37,4 +37,10 @@ _, err = message.New(app).SendText(ctx, "userid", "hello")
 
 OA products (approval, calendar, meetings, WeDrive) are separate WeCom products and stay out of this module.
 
-Empty Identity fields mean the corp app or the member did not grant them. `user_ticket` is short-lived; do not persist it.
+Empty Identity fields mean the corp app or the member did not grant them. `Email` is the personal mailbox; `BizMail` is the corp mailbox. `user_ticket` is short-lived, omitted from JSON, and must not be persisted.
+
+Login exchange uses `/cgi-bin/auth/getuserinfo`. If `user/get` returns 81013 or 60011 (userid outside the app visible range), Exchange continues with userid plus `auth/getuserdetail` when a ticket is present.
+
+`contact.UpdateDepartment` takes `DepartmentPatch`. Unset `ParentID`/`Order` are omitted so a zero value is not written.
+
+Receive-message crypto follows the official PKCS#7-to-32 scheme.

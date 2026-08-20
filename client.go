@@ -1,6 +1,7 @@
 package wecom
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -38,7 +39,7 @@ func (c *Client) base() string {
 
 // App returns a Client with the same corp credentials as Production.
 func (p Production) App() *Client {
-	return &Client{CorpID: p.CorpID, AgentID: p.AgentID, Secret: p.Secret, HTTP: p.HTTP}
+	return &Client{CorpID: p.CorpID, AgentID: p.AgentID, Secret: p.Secret, HTTP: p.HTTP, BaseURL: p.BaseURL}
 }
 
 func (c *Client) clock() time.Time {
@@ -55,23 +56,20 @@ func (c *Client) doer() Doer {
 	return HTTPDoer{}
 }
 
-// Token returns a cached access_token.
+// Token returns a cached access_token. The lock is held across a refresh so
+// concurrent callers share one gettoken request.
 func (c *Client) Token(ctx context.Context) (string, error) {
-	now := c.clock()
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.clock()
 	if c.token != "" && now.Before(c.tokenExp) {
-		tok := c.token
-		c.mu.Unlock()
-		return tok, nil
+		return c.token, nil
 	}
-	c.mu.Unlock()
 	tok, exp, err := c.fetchToken(ctx)
 	if err != nil {
 		return "", err
 	}
-	c.mu.Lock()
 	c.token, c.tokenExp = tok, exp
-	c.mu.Unlock()
 	return tok, nil
 }
 
@@ -79,6 +77,13 @@ func (c *Client) invalidateToken() {
 	c.mu.Lock()
 	c.token, c.tokenExp = "", time.Time{}
 	c.mu.Unlock()
+}
+
+type tokenResp struct {
+	ErrCode     int    `json:"errcode"`
+	ErrMsg      string `json:"errmsg"`
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
 }
 
 func (c *Client) fetchToken(ctx context.Context) (string, time.Time, error) {
@@ -127,6 +132,21 @@ func (c *Client) PostQuery(ctx context.Context, path string, query url.Values, p
 
 // GetRaw GETs bytes without requiring a JSON object body (media/get).
 func (c *Client) GetRaw(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	body, err := c.getRawOnce(ctx, path, query)
+	if err != nil {
+		return nil, err
+	}
+	if isTokenErr(rawAPIError(body)) {
+		c.invalidateToken()
+		body, err = c.getRawOnce(ctx, path, query)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return body, nil
+}
+
+func (c *Client) getRawOnce(ctx context.Context, path string, query url.Values) ([]byte, error) {
 	tok, err := c.Token(ctx)
 	if err != nil {
 		return nil, err
@@ -138,6 +158,35 @@ func (c *Client) GetRaw(ctx context.Context, path string, query url.Values) ([]b
 
 // PostFormFile uploads multipart form file (media/upload).
 func (c *Client) PostFormFile(ctx context.Context, path string, query url.Values, field, filename string, r io.Reader) ([]byte, error) {
+	m, ok := c.doer().(interface {
+		PostMultipart(context.Context, string, string, string, io.Reader) ([]byte, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("wecom http client does not support multipart upload")
+	}
+	payload, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+	body, err := c.postFormFileOnce(ctx, m, path, query, field, filename, payload)
+	if err != nil {
+		return nil, err
+	}
+	if isTokenErr(rawAPIError(body)) {
+		c.invalidateToken()
+		body, err = c.postFormFileOnce(ctx, m, path, query, field, filename, payload)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return body, nil
+}
+
+type multipartDoer interface {
+	PostMultipart(context.Context, string, string, string, io.Reader) ([]byte, error)
+}
+
+func (c *Client) postFormFileOnce(ctx context.Context, m multipartDoer, path string, query url.Values, field, filename string, payload []byte) ([]byte, error) {
 	tok, err := c.Token(ctx)
 	if err != nil {
 		return nil, err
@@ -145,13 +194,7 @@ func (c *Client) PostFormFile(ctx context.Context, path string, query url.Values
 	q := cloneValues(query)
 	q.Set("access_token", tok)
 	raw := c.base() + path + "?" + q.Encode()
-	m, ok := c.doer().(interface {
-		PostMultipart(context.Context, string, string, string, io.Reader) ([]byte, error)
-	})
-	if !ok {
-		return nil, fmt.Errorf("wecom http client does not support multipart upload")
-	}
-	return m.PostMultipart(ctx, raw, field, filename, r)
+	return m.PostMultipart(ctx, raw, field, filename, bytes.NewReader(payload))
 }
 
 // Decode unmarshals a WeCom JSON body and rejects non-zero errcode.
@@ -219,4 +262,16 @@ func cloneValues(q url.Values) url.Values {
 		out[k] = append([]string{}, vs...)
 	}
 	return out
+}
+
+func rawAPIError(body []byte) error {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 || body[0] != '{' {
+		return nil
+	}
+	var meta apiMeta
+	if json.Unmarshal(body, &meta) != nil || meta.ErrCode == 0 {
+		return nil
+	}
+	return Error{Code: meta.ErrCode, Msg: meta.ErrMsg}
 }

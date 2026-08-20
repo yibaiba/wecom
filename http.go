@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var defaultHTTP = &http.Client{Timeout: 10 * time.Second}
+
 // HTTPDoer performs GET and POST requests against the WeCom API.
 type HTTPDoer struct {
 	Client *http.Client
@@ -18,7 +20,7 @@ func (h HTTPDoer) client() *http.Client {
 	if h.Client != nil {
 		return h.Client
 	}
-	return &http.Client{Timeout: 10 * time.Second}
+	return defaultHTTP
 }
 
 // Get fetches a URL.

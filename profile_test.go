@@ -56,3 +56,30 @@ func TestOverlayPrivateDetailFillsSensitiveGaps(t *testing.T) {
 		t.Fatalf("sensitive %+v", got)
 	}
 }
+
+func TestOverlayPrivateDetailDoesNotFoldBizMailIntoEmail(t *testing.T) {
+	got := overlayPrivateDetail(Identity{UserID: "u"}, userDetailResp{BizMail: "a@corp.com"})
+	if got.Email != "" || got.BizMail != "a@corp.com" {
+		t.Fatalf("fold %+v", got)
+	}
+}
+
+func TestIdentityTicketsOmittedFromJSON(t *testing.T) {
+	raw, err := json.Marshal(Identity{UserID: "zhangsan", UserTicket: "t", UserDocTicket: "d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["user_ticket"]; ok {
+		t.Fatalf("user_ticket present %s", raw)
+	}
+	if _, ok := m["user_doc_ticket"]; ok {
+		t.Fatalf("user_doc_ticket present %s", raw)
+	}
+	if m["userid"] != "zhangsan" {
+		t.Fatalf("json %s", raw)
+	}
+}

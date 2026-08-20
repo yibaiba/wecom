@@ -69,8 +69,19 @@ func (a *API) CreateDepartment(ctx context.Context, d Department) (int, error) {
 	return out.ID, nil
 }
 
-// UpdateDepartment updates a department.
-func (a *API) UpdateDepartment(ctx context.Context, d Department) error {
+// DepartmentPatch is a partial department update. Nil pointer fields are omitted
+// so parentid/order 0 is not posted unless the caller sets the pointer.
+type DepartmentPatch struct {
+	ID               int      `json:"id"`
+	Name             string   `json:"name,omitempty"`
+	NameEN           string   `json:"name_en,omitempty"`
+	ParentID         *int     `json:"parentid,omitempty"`
+	Order            *int     `json:"order,omitempty"`
+	DepartmentLeader []string `json:"department_leader,omitempty"`
+}
+
+// UpdateDepartment updates a department. Unset ParentID/Order are omitted.
+func (a *API) UpdateDepartment(ctx context.Context, d DepartmentPatch) error {
 	return a.App.PostJSON(ctx, "/cgi-bin/department/update", d, nil)
 }
 

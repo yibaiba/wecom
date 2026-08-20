@@ -106,25 +106,17 @@ func (s *wecomString) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func (p Production) directoryProfile(ctx context.Context, token, userid string) (Identity, error) {
-	u := getUserURL + "?access_token=" + url.QueryEscape(token) + "&userid=" + url.QueryEscape(userid)
-	body, err := p.HTTP.Get(ctx, u)
-	if err != nil {
-		return Identity{}, fmt.Errorf("wecom user get: %w", err)
-	}
+func (p Production) directoryProfile(ctx context.Context, app *Client, userid string) (Identity, error) {
+	q := url.Values{}
+	q.Set("userid", userid)
 	var out userGetResp
-	if err := json.Unmarshal(body, &out); err != nil {
-		return Identity{}, fmt.Errorf("wecom user get decode: %w", err)
-	}
-	if out.ErrCode != 0 {
-		return Identity{}, fmt.Errorf("wecom user get error")
+	if err := app.GetJSON(ctx, "/cgi-bin/user/get", q, &out); err != nil {
+		return Identity{}, err
 	}
 	return identityFromUserGet(userid, out), nil
 }
 
 func identityFromUserGet(userid string, out userGetResp) Identity {
-	email := strings.TrimSpace(out.Email)
-	biz := strings.TrimSpace(out.BizMail)
 	avatar := strings.TrimSpace(out.Avatar)
 	thumb := strings.TrimSpace(out.ThumbAvatar)
 	return Identity{
@@ -133,8 +125,8 @@ func identityFromUserGet(userid string, out userGetResp) Identity {
 		Alias:            strings.TrimSpace(out.Alias),
 		Position:         strings.TrimSpace(out.Position),
 		ExternalPosition: strings.TrimSpace(out.ExternalPosition),
-		Email:            firstNonEmpty(email, biz),
-		BizMail:          biz,
+		Email:            strings.TrimSpace(out.Email),
+		BizMail:          strings.TrimSpace(out.BizMail),
 		Mobile:           strings.TrimSpace(out.Mobile),
 		Telephone:        strings.TrimSpace(out.Telephone),
 		Address:          strings.TrimSpace(out.Address),
@@ -181,21 +173,12 @@ func ParseDirectoryUsers(body []byte) ([]Identity, error) {
 	return users, nil
 }
 
-func (p Production) mergePrivateDetail(ctx context.Context, token, ticket string, ident Identity) Identity {
-	if p.HTTP == nil || strings.TrimSpace(ticket) == "" {
-		return ident
-	}
-	payload, err := json.Marshal(map[string]string{"user_ticket": ticket})
-	if err != nil {
-		return ident
-	}
-	u := getUserDetailURL + "?access_token=" + url.QueryEscape(token)
-	body, err := p.HTTP.Post(ctx, u, payload)
-	if err != nil {
+func (p Production) mergePrivateDetail(ctx context.Context, app *Client, ticket string, ident Identity) Identity {
+	if app == nil || strings.TrimSpace(ticket) == "" {
 		return ident
 	}
 	var out userDetailResp
-	if err := json.Unmarshal(body, &out); err != nil || out.ErrCode != 0 {
+	if err := app.PostJSON(ctx, "/cgi-bin/auth/getuserdetail", map[string]string{"user_ticket": ticket}, &out); err != nil {
 		return ident
 	}
 	return overlayPrivateDetail(ident, out)
@@ -207,7 +190,7 @@ func overlayPrivateDetail(ident Identity, out userDetailResp) Identity {
 	ident.Avatar = firstNonEmpty(out.Avatar, ident.Avatar)
 	ident.QRCode = firstNonEmpty(out.QRCode, ident.QRCode)
 	ident.Mobile = firstNonEmpty(out.Mobile, ident.Mobile)
-	ident.Email = firstNonEmpty(out.Email, out.BizMail, ident.Email)
+	ident.Email = firstNonEmpty(out.Email, ident.Email)
 	ident.BizMail = firstNonEmpty(out.BizMail, ident.BizMail)
 	ident.Address = firstNonEmpty(out.Address, ident.Address)
 	if uid := strings.TrimSpace(out.UserID); uid != "" {
