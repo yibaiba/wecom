@@ -7,7 +7,7 @@ Reusable WeCom (企业微信) self-built application client for Go. Stdlib only.
 | core | `github.com/yibaiba/wecom` | `Client` (token + HTTP), `Identity`, `Production` / `Sandbox` login exchange |
 | login pages | `github.com/yibaiba/wecom/login` | WWLogin panel, sandbox picker, phone QR |
 | contacts | `github.com/yibaiba/wecom/contact` | members, departments, tags |
-| application | `github.com/yibaiba/wecom/agent` | app settings, menu, workbench |
+| application | `github.com/yibaiba/wecom/agent` | app settings, menu, workbench (template + per-user / batch data) |
 | messages | `github.com/yibaiba/wecom/message` | send / recall / app group chat |
 | media | `github.com/yibaiba/wecom/media` | upload / download |
 | JS-SDK | `github.com/yibaiba/wecom/jsapi` | tickets + signature |
