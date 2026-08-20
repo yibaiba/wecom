@@ -1,7 +1,9 @@
-package wecom
+package login
 
 import (
 	"strings"
+
+	"github.com/yibaiba/wecom"
 )
 
 // Default login paths. Host apps may use other routes; pass those paths into
@@ -14,14 +16,14 @@ const (
 	EnrollContinuePath = "/login/wecom/enroll/continue"
 )
 
-// LoginApp is the WeCom corp application used for browser login.
-type LoginApp struct {
+// App is the WeCom corp application used for browser login.
+type App struct {
 	CorpID  string
 	AgentID int
 }
 
 // Configured reports whether corp id and agent id are present.
-func (a LoginApp) Configured() bool {
+func (a App) Configured() bool {
 	return a.CorpID != "" && a.AgentID != 0
 }
 
@@ -36,11 +38,11 @@ func IsWxWorkUA(ua string) bool {
 }
 
 // WebviewURL is silent OAuth2 for the WeCom built-in browser.
-func (a LoginApp) WebviewURL(callback, state string) string {
-	return WxWorkAuthURL(a.CorpID, a.AgentID, callback, state)
+func (a App) WebviewURL(callback, state string) string {
+	return wecom.WxWorkAuthURL(a.CorpID, a.AgentID, callback, state)
 }
 
 // PrivateInfoURL is the phone-scan OAuth2 URL for unknown members.
-func (a LoginApp) PrivateInfoURL(callback, state string) string {
-	return WxWorkPrivateInfoURL(a.CorpID, a.AgentID, callback, state)
+func (a App) PrivateInfoURL(callback, state string) string {
+	return wecom.WxWorkPrivateInfoURL(a.CorpID, a.AgentID, callback, state)
 }

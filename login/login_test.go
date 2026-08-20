@@ -1,4 +1,4 @@
-package wecom
+package login
 
 import (
 	"net/http"
@@ -9,7 +9,7 @@ import (
 
 func TestWriteLoginPanel(t *testing.T) {
 	rec := httptest.NewRecorder()
-	WriteLoginPanel(rec, LoginApp{CorpID: "wwpanel", AgentID: 1000002}, "abc", "https://app.example.test/auth/wecom/callback")
+	WriteLoginPanel(rec, App{CorpID: "wwpanel", AgentID: 1000002}, "abc", "https://app.example.test/auth/wecom/callback")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
 	}

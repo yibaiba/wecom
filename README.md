@@ -1,23 +1,31 @@
 # wecom
 
-Reusable WeCom (企业微信) login module. Stdlib only. Host apps do not import enterprise-sso.
+Reusable WeCom (企业微信) login for Go. Stdlib only. Split so host apps import only what they need.
+
+| Package | Import | What it is |
+|---|---|---|
+| adapter | `github.com/yibaiba/wecom` | `Production` / `Sandbox` code exchange, authorize URLs |
+| login pages | `github.com/yibaiba/wecom/login` | WWLogin panel, sandbox picker, phone QR, default routes |
 
 ```bash
 go get github.com/yibaiba/wecom@latest
 ```
 
 ```go
-import "github.com/yibaiba/wecom"
+import (
+    "github.com/yibaiba/wecom"
+    "github.com/yibaiba/wecom/login"
+)
 
-app := wecom.LoginApp{CorpID: corpID, AgentID: agentID}
+app := login.App{CorpID: corpID, AgentID: agentID}
 ex := wecom.Production{CorpID: corpID, AgentID: agentID, Secret: secret, HTTP: wecom.HTTPDoer{}, RedirectURI: callback}
 
-if wecom.IsWxWorkUA(r.UserAgent()) {
+if login.IsWxWorkUA(r.UserAgent()) {
     http.Redirect(w, r, app.WebviewURL(callback, state), http.StatusFound)
     return
 }
-wecom.WriteLoginPanel(w, app, state, callback)
+login.WriteLoginPanel(w, app, state, callback)
 ident, err := ex.Exchange(r.Context(), code)
 ```
 
-Phone QR for unknown users: host your own status/continue routes and pass those paths into `WritePhoneQRPage`. Session cookies and employee tables stay in the host app.
+Phone QR for unknown users: host your own status/continue routes and pass those paths into `login.WritePhoneQRPage`. Session cookies and employee tables stay in the host app.

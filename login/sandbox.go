@@ -1,15 +1,17 @@
-package wecom
+package login
 
 import (
 	"html"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/yibaiba/wecom"
 )
 
 // WriteSandboxPicker renders the explicit sandbox identity list.
 // callbackPath is the host callback route (for example CallbackPath).
-func WriteSandboxPicker(w http.ResponseWriter, state, callbackPath string, users []Identity) {
+func WriteSandboxPicker(w http.ResponseWriter, state, callbackPath string, users []wecom.Identity) {
 	if callbackPath == "" {
 		callbackPath = CallbackPath
 	}

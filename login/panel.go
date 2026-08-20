@@ -1,4 +1,4 @@
-package wecom
+package login
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 
 // WriteLoginPanel renders the official WWLogin component. callback is the
 // host app's code receiver and must be same-origin when redirect_type=callback.
-func WriteLoginPanel(w http.ResponseWriter, app LoginApp, state, callback string) {
+func WriteLoginPanel(w http.ResponseWriter, app App, state, callback string) {
 	payload, err := json.Marshal(map[string]string{
 		"appid":        app.CorpID,
 		"agentid":      strconv.Itoa(app.AgentID),
