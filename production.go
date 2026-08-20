@@ -19,6 +19,7 @@ type tokenResp struct {
 	ErrCode     int    `json:"errcode"`
 	ErrMsg      string `json:"errmsg"`
 	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
 }
 
 type userResp struct {
@@ -44,10 +45,6 @@ func (u userResp) userid() string {
 
 func (u userResp) openid() string {
 	return firstNonEmpty(u.OpenID, u.OpenIDAlt)
-}
-
-type poster interface {
-	Post(ctx context.Context, rawURL string, body []byte) ([]byte, error)
 }
 
 // Exchange redeems a WeCom code for member identity. It maps every field

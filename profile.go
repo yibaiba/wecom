@@ -155,8 +155,7 @@ func identityFromUserGet(userid string, out userGetResp) Identity {
 }
 
 func (p Production) mergePrivateDetail(ctx context.Context, token, ticket string, ident Identity) Identity {
-	poster, ok := p.HTTP.(poster)
-	if !ok || strings.TrimSpace(ticket) == "" {
+	if p.HTTP == nil || strings.TrimSpace(ticket) == "" {
 		return ident
 	}
 	payload, err := json.Marshal(map[string]string{"user_ticket": ticket})
@@ -164,7 +163,7 @@ func (p Production) mergePrivateDetail(ctx context.Context, token, ticket string
 		return ident
 	}
 	u := getUserDetailURL + "?access_token=" + url.QueryEscape(token)
-	body, err := poster.Post(ctx, u, payload)
+	body, err := p.HTTP.Post(ctx, u, payload)
 	if err != nil {
 		return ident
 	}

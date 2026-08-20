@@ -1,54 +1,70 @@
 # wecom
 
-Reusable WeCom (企业微信) login for Go. Stdlib only. Split so host apps import only what they need.
+Reusable WeCom (企业微信) **self-built application** client for Go. Stdlib only.
+
+A corp app can log members in, read the address book in its visible range, send messages, manage media/menu, and receive callbacks. This module covers those application APIs. OA products (approval, calendar, meetings, WeDrive, …) stay out of this package — they are separate WeCom products, not what every 应用 can do.
 
 | Package | Import | What it is |
 |---|---|---|
-| adapter | `github.com/yibaiba/wecom` | `Production` / `Sandbox` code exchange. `Identity` maps every field `user/get`, `getuserinfo`, and `auth/getuserdetail` return. |
-| login pages | `github.com/yibaiba/wecom/login` | WWLogin panel, sandbox picker, phone QR, default routes |
+| app + login exchange | `github.com/yibaiba/wecom` | `Client` for application APIs. `Production` / `Sandbox` for OAuth `Exchange`. |
+| login pages | `github.com/yibaiba/wecom/login` | WWLogin panel, sandbox picker, phone QR |
 
 ```bash
 go get github.com/yibaiba/wecom@latest
 ```
 
 ```go
-import (
-    "github.com/yibaiba/wecom"
-    "github.com/yibaiba/wecom/login"
-)
+cli := &wecom.Client{CorpID: corpID, AgentID: agentID, Secret: secret, HTTP: wecom.HTTPDoer{}}
 
-app := login.App{CorpID: corpID, AgentID: agentID}
-ex := wecom.Production{CorpID: corpID, AgentID: agentID, Secret: secret, HTTP: wecom.HTTPDoer{}, RedirectURI: callback}
+ident, err := wecom.Production{CorpID: corpID, AgentID: agentID, Secret: secret, HTTP: wecom.HTTPDoer{}}.Exchange(ctx, code)
 
-if login.IsWxWorkUA(r.UserAgent()) {
-    http.Redirect(w, r, app.WebviewURL(callback, state), http.StatusFound)
-    return
-}
-login.WriteLoginPanel(w, app, state, callback)
-ident, err := ex.Exchange(r.Context(), code)
+ag, err := cli.GetAgent(ctx)                 // visible users / depts / tags
+users, err := cli.ListDepartmentUsers(ctx, 1)
+_, err = cli.SendText(ctx, "userid", "hello")
+media, err := cli.UploadMediaBytes(ctx, "file", "a.txt", data)
+ticket, err := cli.JSAPITicket(ctx)
+sig := wecom.JSAPISignature(ticket, nonce, url, ts)
 ```
 
-`Exchange` calls gettoken → getuserinfo → directory `user/get`. When the code has `user_ticket` (`snsapi_privateinfo`), it overlays `auth/getuserdetail`. Empty fields mean the corp app or the member did not grant them. New self-built apps usually need OAuth for avatar, gender, mobile, email, biz_mail, qr_code, and address.
+Receive-message URL:
 
-Non-members (no `userid`) skip `user/get` and return `OpenID` / `ExternalUserID`.
+```go
+cb := wecom.Callback{Token: token, EncodingAESKey: aesKey, CorpID: corpID}
+echo, err := cb.VerifyURL(msgSig, timestamp, nonce, echostr)
+plain, err := cb.Decrypt(msgSig, timestamp, nonce, body)
+```
 
-Phone QR for unknown users: host your own status/continue routes and pass those paths into `login.WritePhoneQRPage`. Session cookies and employee tables stay in the host app.
+## Client surface
+
+**Auth / identity** — `Production.Exchange`, `WxWorkAuthURL`, `WxWorkPrivateInfoURL` (see Identity below).
+
+**Application** — `GetAgent`, `ListAgents`, `SetAgent`, `CreateMenu`, `GetMenu`, `DeleteMenu`, workbench template/data.
+
+**Contacts** — `GetUser`, `ListDepartmentUsers`, `ListDepartmentUserDetails`, `CreateUser`, `UpdateUser`, `DeleteUser`, `BatchDeleteUsers`, `ListUserIDs`, `UserIDByMobile`, `UserIDByEmail`, `UserIDToOpenID`, `OpenIDToUserID`, `InviteUsers`, `AuthSuccess`, `JoinQRCode`.
+
+**Departments / tags** — list/get/create/update/delete, tag members.
+
+**Messages** — `Send` (text, image, voice, video, file, textcard, news, mpnews, markdown, miniprogram_notice, template_card JSON), `SendText`, `SendMarkdown`, `RecallMessage`, `UpdateTemplateCard`, app group chat create/update/get/send.
+
+**Media** — `UploadMedia`, `UploadImage`, `GetMedia`.
+
+**JS-SDK** — `JSAPITicket`, `AgentTicket`, `JSAPISignature`.
+
+**Network** — `APIDomainIPs`, `CallbackIPs`.
+
+**Callbacks** — `Callback.VerifyURL`, `Decrypt`, `Encrypt`.
+
+Empty fields mean the corp app or the member did not grant them. New self-built apps usually need OAuth for avatar, gender, mobile, email, biz_mail, qr_code, and address.
 
 ## Identity
 
-| Field | Source | Notes |
-|---|---|---|
-| UserID, Name, Alias, Position | `user/get` | Name falls back to UserID |
-| ExternalPosition | `user/get` | Customer-facing title |
-| Email | `user/get` then `getuserdetail` | Personal email; falls back to BizMail |
-| BizMail | `user/get` then `getuserdetail` | Enterprise mailbox |
-| Mobile, Telephone, Address | `user/get` / `getuserdetail` | Telephone is landline |
-| Gender | `user/get` / `getuserdetail` | `0` undefined, `1` male, `2` female |
-| Avatar, ThumbAvatar | `user/get` / `getuserdetail` | Avatar falls back to thumb |
-| QRCode | `user/get` / `getuserdetail` | Personal contact QR URL |
-| Status | `user/get` | `1` active, `2` disabled, `4` inactive, `5` quit |
-| MainDepartment, Department, Order, IsLeaderInDept, DirectLeader | `user/get` | Org chart |
-| ExtAttr | `user/get` | Custom text / web / miniprogram attrs |
-| ExternalProfile | `user/get` | Corp name, video account, external attrs |
-| OpenUserID | `user/get` / getuserinfo | Service-provider global id |
-| DeviceID, UserTicket, UserDocTicket, OpenID, ExternalUserID | getuserinfo | Ticket is short-lived; do not persist |
+`Exchange` calls gettoken → getuserinfo → directory `user/get`. When the code has `user_ticket` (`snsapi_privateinfo`), it overlays `auth/getuserdetail`. Non-members skip `user/get` and return `OpenID` / `ExternalUserID`.
+
+| Field | Source |
+|---|---|
+| UserID, Name, Alias, Position, ExternalPosition | `user/get` |
+| Email, BizMail, Mobile, Telephone, Address, Gender, Avatar, ThumbAvatar, QRCode | `user/get` / `getuserdetail` |
+| Status, org fields, ExtAttr, ExternalProfile | `user/get` |
+| DeviceID, UserTicket, UserDocTicket, OpenID, ExternalUserID | getuserinfo |
+
+Phone QR for unknown users: host status/continue routes and pass those paths into `login.WritePhoneQRPage`. Session cookies stay in the host app.

@@ -5,74 +5,79 @@ package wecom
 // auth/getuserdetail when those APIs return them. Empty means the corp app or
 // the member did not grant that field.
 type Identity struct {
-	UserID           string
-	Name             string
-	Alias            string
-	Position         string
-	ExternalPosition string
-	Email            string
-	BizMail          string
-	Mobile           string
-	Telephone        string
-	Address          string
+	UserID           string `json:"userid,omitempty"`
+	Name             string `json:"name,omitempty"`
+	Alias            string `json:"alias,omitempty"`
+	Position         string `json:"position,omitempty"`
+	ExternalPosition string `json:"external_position,omitempty"`
+	Email            string `json:"email,omitempty"`
+	BizMail          string `json:"biz_mail,omitempty"`
+	Mobile           string `json:"mobile,omitempty"`
+	Telephone        string `json:"telephone,omitempty"`
+	Address          string `json:"address,omitempty"`
 	// Gender is "0" undefined, "1" male, "2" female.
-	Gender      string
-	Avatar      string
-	ThumbAvatar string
-	QRCode      string
+	Gender      string `json:"gender,omitempty"`
+	Avatar      string `json:"avatar,omitempty"`
+	ThumbAvatar string `json:"thumb_avatar,omitempty"`
+	QRCode      string `json:"qr_code,omitempty"`
 	// Status is 1 active, 2 disabled, 4 inactive, 5 quit.
-	Status          int
-	MainDepartment  int
-	Department      []int
-	Order           []int
-	IsLeaderInDept  []int
-	DirectLeader    []string
-	OpenUserID      string
-	DeviceID        string
-	UserTicket      string
-	UserDocTicket   string
-	OpenID          string
-	ExternalUserID  string
-	ExtAttr         []ExtAttr
-	ExternalProfile ExternalProfile
+	Status          int             `json:"status,omitempty"`
+	MainDepartment  int             `json:"main_department,omitempty"`
+	Department      []int           `json:"department,omitempty"`
+	Order           []int           `json:"order,omitempty"`
+	IsLeaderInDept  []int           `json:"is_leader_in_dept,omitempty"`
+	DirectLeader    []string        `json:"direct_leader,omitempty"`
+	OpenUserID      string          `json:"open_userid,omitempty"`
+	DeviceID        string          `json:"device_id,omitempty"`
+	UserTicket      string          `json:"user_ticket,omitempty"`
+	UserDocTicket   string          `json:"user_doc_ticket,omitempty"`
+	OpenID          string          `json:"openid,omitempty"`
+	ExternalUserID  string          `json:"external_userid,omitempty"`
+	ExtAttr         []ExtAttr       `json:"extattr,omitempty"`
+	ExternalProfile ExternalProfile `json:"external_profile,omitempty"`
 }
 
 // ExtAttr is a directory or external custom attribute.
 type ExtAttr struct {
-	Type        int
-	Name        string
-	Text        ExtAttrText
-	Web         ExtAttrWeb
-	Miniprogram ExtAttrMiniprogram
+	Type        int                `json:"type"`
+	Name        string             `json:"name"`
+	Text        ExtAttrText        `json:"text"`
+	Web         ExtAttrWeb         `json:"web"`
+	Miniprogram ExtAttrMiniprogram `json:"miniprogram"`
 }
 
 // ExtAttrText is type 0.
 type ExtAttrText struct {
-	Value string
+	Value string `json:"value"`
 }
 
 // ExtAttrWeb is type 1.
 type ExtAttrWeb struct {
-	URL   string
-	Title string
+	URL   string `json:"url"`
+	Title string `json:"title"`
 }
 
 // ExtAttrMiniprogram is type 2.
 type ExtAttrMiniprogram struct {
-	AppID    string
-	PagePath string
-	Title    string
+	AppID    string `json:"appid"`
+	PagePath string `json:"pagepath"`
+	Title    string `json:"title"`
+}
+
+// ExtAttrGroup is the extattr object on user/create.
+type ExtAttrGroup struct {
+	Attrs []ExtAttr `json:"attrs"`
 }
 
 // ExternalProfile is the member's customer-facing profile.
 type ExternalProfile struct {
-	ExternalCorpName string
-	WechatChannels   WechatChannels
-	ExternalAttr     []ExtAttr
+	ExternalCorpName string         `json:"external_corp_name,omitempty"`
+	WechatChannels   WechatChannels `json:"wechat_channels,omitempty"`
+	ExternalAttr     []ExtAttr      `json:"external_attr,omitempty"`
 }
 
 // WechatChannels is the video-account card on ExternalProfile.
 type WechatChannels struct {
-	Nickname string
-	Status   int
+	Nickname string `json:"nickname,omitempty"`
+	Status   int    `json:"status,omitempty"`
 }

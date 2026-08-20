@@ -55,6 +55,7 @@ type Production struct {
 // Doer is the injected HTTP client.
 type Doer interface {
 	Get(ctx context.Context, rawURL string) ([]byte, error)
+	Post(ctx context.Context, rawURL string, body []byte) ([]byte, error)
 }
 
 // Mode returns production.

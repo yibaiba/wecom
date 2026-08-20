@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"time"
 )
@@ -45,5 +46,27 @@ func (h HTTPDoer) do(req *http.Request) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return io.ReadAll(io.LimitReader(resp.Body, 21<<20))
+}
+
+// PostMultipart uploads a form file field (media/upload).
+func (h HTTPDoer) PostMultipart(ctx context.Context, rawURL, field, filename string, r io.Reader) ([]byte, error) {
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, err := w.CreateFormFile(field, filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(part, r); err != nil {
+		return nil, err
+	}
+	if err := w.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	return h.do(req)
 }
