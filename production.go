@@ -47,6 +47,26 @@ func (p Production) Exchange(ctx context.Context, code string) (Identity, error)
 	return p.identityFromAuth(ctx, app, info)
 }
 
+// Profile reads the current directory member. 81013/60011 mean the userid is
+// outside the app visible range; callers treat that as an empty profile.
+func (p Production) Profile(ctx context.Context, userid string) (Identity, error) {
+	userid = strings.TrimSpace(userid)
+	if userid == "" {
+		return Identity{}, fmt.Errorf("userid is required")
+	}
+	if p.HTTP == nil {
+		return Identity{}, fmt.Errorf("wecom http client is not configured")
+	}
+	ident, err := p.directoryProfile(ctx, p.App(), userid)
+	if err != nil {
+		if isDirectoryScopeErr(err) {
+			return Identity{UserID: userid}, nil
+		}
+		return Identity{}, err
+	}
+	return ident, nil
+}
+
 func (p Production) identityFromAuth(ctx context.Context, app *Client, info userResp) (Identity, error) {
 	userid := info.userid()
 	if userid == "" {

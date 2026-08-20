@@ -32,6 +32,15 @@ func TestWritePhoneQRPageUsesHostPaths(t *testing.T) {
 	if !strings.Contains(body, "/auth/wecom/status") || !strings.Contains(body, "/auth/wecom/continue") {
 		t.Fatal("qr page must use host poll paths")
 	}
+	if strings.Contains(body, "cdn.jsdelivr.net") || strings.Contains(body, "QRCode.toCanvas") {
+		t.Fatal("qr page must not load QR from external CDN")
+	}
+	if !strings.Contains(body, "data:image/png;base64,") {
+		t.Fatal("qr page must embed a server-rendered PNG")
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("cache-control %q", rec.Header().Get("Cache-Control"))
+	}
 }
 
 func TestIsWxWorkUA(t *testing.T) {

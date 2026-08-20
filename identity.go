@@ -81,3 +81,27 @@ type WechatChannels struct {
 	Nickname string `json:"nickname,omitempty"`
 	Status   int    `json:"status,omitempty"`
 }
+
+// PreferredEmail is the corp mailbox, else the personal mailbox. Empty if neither was granted.
+func PreferredEmail(id Identity) string {
+	return firstNonEmpty(id.BizMail, id.Email)
+}
+
+// MergeDirectory copies non-empty directory fields onto a login identity.
+func MergeDirectory(login, dir Identity) Identity {
+	out := login
+	if uid := firstNonEmpty(dir.UserID); uid != "" {
+		out.UserID = uid
+	}
+	out.Name = firstNonEmpty(dir.Name, login.Name)
+	out.Email = firstNonEmpty(dir.Email, login.Email)
+	out.BizMail = firstNonEmpty(dir.BizMail, login.BizMail)
+	out.Avatar = firstNonEmpty(dir.Avatar, login.Avatar)
+	out.ThumbAvatar = firstNonEmpty(dir.ThumbAvatar, login.ThumbAvatar)
+	return out
+}
+
+// PreferredAvatar is the full avatar, else the thumbnail. Empty if neither was granted.
+func PreferredAvatar(id Identity) string {
+	return firstNonEmpty(id.Avatar, id.ThumbAvatar)
+}

@@ -1,9 +1,12 @@
 package login
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // WritePhoneQRPage renders a phone-scan page. statusPath and continuePath are
@@ -15,10 +18,16 @@ func WritePhoneQRPage(w http.ResponseWriter, authorize, statusPath, continuePath
 	if continuePath == "" {
 		continuePath = EnrollContinuePath
 	}
+	img, err := qrPNGDataURI(authorize)
+	if err != nil {
+		http.Error(w, "failed to render QR", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	page := phoneQRHTML
 	page = strings.Replace(page, "__WECOM_AUTH__", jsonString(authorize), 1)
+	page = strings.Replace(page, "__QR_DATA_URI__", img, 1)
 	page = strings.Replace(page, "__STATUS_PATH__", jsonString(statusPath), 1)
 	page = strings.Replace(page, "__CONTINUE_PATH__", jsonString(continuePath), 1)
 	_, _ = w.Write([]byte(page))
@@ -28,6 +37,14 @@ func WritePhoneQRPage(w http.ResponseWriter, authorize, statusPath, continuePath
 func WriteEnrollDonePage(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(enrollDoneHTML))
+}
+
+func qrPNGDataURI(content string) (string, error) {
+	png, err := qrcode.Encode(content, qrcode.Medium, 260)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
 
 func jsonString(v string) string {
@@ -51,21 +68,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0
 .wrap{max-width:480px;margin:48px auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);text-align:center}
 h1{font-size:20px;margin:0 0 8px}
 p{color:#666;font-size:14px;line-height:1.5}
-canvas{margin:16px auto;display:block}
+img.qr{margin:16px auto;display:block;width:260px;height:260px}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>请用手机企业微信扫码</h1>
 <p>系统里还没有这个人，需要手机扫码完成登录。</p>
-<canvas id="qr"></canvas>
+<img class="qr" width="260" height="260" alt="企业微信授权二维码" data-authorize=__WECOM_AUTH__ src="__QR_DATA_URI__">
 <p id="status">等待手机授权…</p>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <script>
 (function(){
-  var url=__WECOM_AUTH__;
-  QRCode.toCanvas(document.getElementById("qr"), url, {width:260,margin:2});
   function poll(){
     fetch(__STATUS_PATH__,{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(j){
       if(j.status==="completed"){ location.assign(__CONTINUE_PATH__); return; }

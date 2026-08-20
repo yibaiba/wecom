@@ -1,6 +1,7 @@
 package wecom
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -61,6 +62,61 @@ func TestOverlayPrivateDetailDoesNotFoldBizMailIntoEmail(t *testing.T) {
 	got := overlayPrivateDetail(Identity{UserID: "u"}, userDetailResp{BizMail: "a@corp.com"})
 	if got.Email != "" || got.BizMail != "a@corp.com" {
 		t.Fatalf("fold %+v", got)
+	}
+}
+
+func TestMergeDirectoryPrefersNonEmptyDirectory(t *testing.T) {
+	got := MergeDirectory(
+		Identity{UserID: "u", Name: "旧名", Email: "old@p.test", BizMail: "old@corp.test", Avatar: "https://old"},
+		Identity{UserID: "u", Name: "新名", Email: "new@p.test", BizMail: "new@corp.test", Avatar: "https://new"},
+	)
+	if got.Name != "新名" || got.BizMail != "new@corp.test" || got.Email != "new@p.test" || got.Avatar != "https://new" {
+		t.Fatalf("merge %+v", got)
+	}
+	kept := MergeDirectory(
+		Identity{UserID: "u", Name: "旧名", Email: "old@p.test", Avatar: "https://old"},
+		Identity{UserID: "u"},
+	)
+	if kept.Name != "旧名" || kept.Email != "old@p.test" || kept.Avatar != "https://old" {
+		t.Fatalf("empty directory wiped %+v", kept)
+	}
+}
+
+func TestSandboxProfileReadsCurrentUser(t *testing.T) {
+	users := map[string]Identity{"wx-a": {UserID: "wx-a", Name: "A", BizMail: "a@corp.test"}}
+	s := Sandbox{Users: users}
+	got, err := s.Profile(context.Background(), "wx-a")
+	if err != nil || got.Name != "A" || PreferredEmail(got) != "a@corp.test" {
+		t.Fatalf("profile %+v %v", got, err)
+	}
+	users["wx-a"] = Identity{UserID: "wx-a", Name: "A2", BizMail: "a2@corp.test"}
+	got, err = s.Profile(context.Background(), "wx-a")
+	if err != nil || got.Name != "A2" || PreferredEmail(got) != "a2@corp.test" {
+		t.Fatalf("updated %+v %v", got, err)
+	}
+}
+
+func TestPreferredEmailPrefersCorpMailbox(t *testing.T) {
+	if PreferredEmail(Identity{Email: "a@personal.test", BizMail: "a@corp.test"}) != "a@corp.test" {
+		t.Fatal("corp mailbox should win")
+	}
+	if PreferredEmail(Identity{Email: "a@personal.test"}) != "a@personal.test" {
+		t.Fatal("personal mailbox should fill when corp is empty")
+	}
+	if PreferredEmail(Identity{}) != "" {
+		t.Fatal("must not invent email")
+	}
+}
+
+func TestPreferredAvatarPrefersFullImage(t *testing.T) {
+	if PreferredAvatar(Identity{Avatar: "https://full", ThumbAvatar: "https://thumb"}) != "https://full" {
+		t.Fatal("full avatar should win")
+	}
+	if PreferredAvatar(Identity{ThumbAvatar: "https://thumb"}) != "https://thumb" {
+		t.Fatal("thumb should fill when full is empty")
+	}
+	if PreferredAvatar(Identity{}) != "" {
+		t.Fatal("must not invent avatar")
 	}
 }
 

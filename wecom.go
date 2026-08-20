@@ -10,6 +10,7 @@ import (
 type Exchanger interface {
 	AuthURL(state, redirectURI string) string
 	Exchange(ctx context.Context, code string) (Identity, error)
+	Profile(ctx context.Context, userid string) (Identity, error)
 	Mode() string
 }
 
@@ -36,11 +37,20 @@ func (s Sandbox) AuthURL(state, redirectURI string) string {
 
 // Exchange treats the sandbox code as a configured userid.
 func (s Sandbox) Exchange(_ context.Context, code string) (Identity, error) {
-	id, ok := s.Users[code]
-	if !ok {
-		return Identity{}, fmt.Errorf("unknown sandbox userid")
+	return s.Profile(context.Background(), code)
+}
+
+// Profile returns the configured sandbox identity for a userid.
+func (s Sandbox) Profile(_ context.Context, userid string) (Identity, error) {
+	if id, ok := s.Users[userid]; ok {
+		return id, nil
 	}
-	return id, nil
+	for _, id := range s.Users {
+		if id.UserID == userid {
+			return id, nil
+		}
+	}
+	return Identity{}, fmt.Errorf("unknown sandbox userid")
 }
 
 // Production talks to the WeCom OAuth API.
