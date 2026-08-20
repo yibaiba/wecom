@@ -6,10 +6,16 @@ import (
 	"net/url"
 )
 
-// Identity is the verified WeCom user.
+// Identity is the verified WeCom member.
 type Identity struct {
-	UserID string
-	Name   string
+	UserID   string
+	Name     string
+	Email    string
+	Avatar   string
+	Mobile   string
+	Alias    string
+	Position string
+	Gender   string
 }
 
 // Exchanger converts a WeCom authorization code into an identity.

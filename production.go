@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"time"
+	"strings"
+)
+
+var (
+	getTokenURL      = "https://qyapi.weixin.qq.com/cgi-bin/gettoken"
+	getUserInfoURL   = "https://qyapi.weixin.qq.com/cgi-bin/user/getuserinfo"
+	getUserURL       = "https://qyapi.weixin.qq.com/cgi-bin/user/get"
+	getUserDetailURL = "https://qyapi.weixin.qq.com/cgi-bin/auth/getuserdetail"
 )
 
 type tokenResp struct {
@@ -20,41 +25,26 @@ type userResp struct {
 	ErrCode    int    `json:"errcode"`
 	ErrMsg     string `json:"errmsg"`
 	UserID     string `json:"UserId"`
+	UserIDAlt  string `json:"userid"`
 	DeviceID   string `json:"DeviceId"`
 	OpenUserID string `json:"open_userid"`
+	UserTicket string `json:"user_ticket"`
 }
 
-type userGetResp struct {
-	ErrCode int    `json:"errcode"`
-	ErrMsg  string `json:"errmsg"`
-	Name    string `json:"name"`
-	UserID  string `json:"userid"`
-}
-
-// HTTPDoer performs GET requests.
-type HTTPDoer struct {
-	Client *http.Client
-}
-
-// Get fetches a URL.
-func (h HTTPDoer) Get(ctx context.Context, rawURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
+func (u userResp) userid() string {
+	if strings.TrimSpace(u.UserID) != "" {
+		return strings.TrimSpace(u.UserID)
 	}
-	client := h.Client
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	return strings.TrimSpace(u.UserIDAlt)
 }
 
-// Exchange redeem the WeCom code for a userid and display name.
+type poster interface {
+	Post(ctx context.Context, rawURL string, body []byte) ([]byte, error)
+}
+
+// Exchange redeems a WeCom code for member identity, including directory
+// email/avatar when the app can read the address book. snsapi_privateinfo
+// codes also fill gaps via getuserdetail.
 func (p Production) Exchange(ctx context.Context, code string) (Identity, error) {
 	if p.HTTP == nil {
 		return Identity{}, fmt.Errorf("wecom http client is not configured")
@@ -63,19 +53,25 @@ func (p Production) Exchange(ctx context.Context, code string) (Identity, error)
 	if err != nil {
 		return Identity{}, err
 	}
-	user, err := p.userFromCode(ctx, token, code)
+	info, err := p.userFromCode(ctx, token, code)
 	if err != nil {
 		return Identity{}, err
 	}
-	name, err := p.userName(ctx, token, user)
+	ident, err := p.directoryProfile(ctx, token, info.userid())
 	if err != nil {
 		return Identity{}, err
 	}
-	return Identity{UserID: user, Name: name}, nil
+	if info.UserTicket != "" {
+		ident = p.mergePrivateDetail(ctx, token, info.UserTicket, ident)
+	}
+	if ident.Name == "" {
+		ident.Name = ident.UserID
+	}
+	return ident, nil
 }
 
 func (p Production) corpToken(ctx context.Context) (string, error) {
-	u := fmt.Sprintf("https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=%s&corpsecret=%s", url.QueryEscape(p.CorpID), url.QueryEscape(p.Secret))
+	u := getTokenURL + "?corpid=" + url.QueryEscape(p.CorpID) + "&corpsecret=" + url.QueryEscape(p.Secret)
 	body, err := p.HTTP.Get(ctx, u)
 	if err != nil {
 		return "", fmt.Errorf("wecom token: %w", err)
@@ -90,37 +86,18 @@ func (p Production) corpToken(ctx context.Context) (string, error) {
 	return out.AccessToken, nil
 }
 
-func (p Production) userFromCode(ctx context.Context, token, code string) (string, error) {
-	u := fmt.Sprintf("https://qyapi.weixin.qq.com/cgi-bin/user/getuserinfo?access_token=%s&code=%s", url.QueryEscape(token), url.QueryEscape(code))
+func (p Production) userFromCode(ctx context.Context, token, code string) (userResp, error) {
+	u := getUserInfoURL + "?access_token=" + url.QueryEscape(token) + "&code=" + url.QueryEscape(code)
 	body, err := p.HTTP.Get(ctx, u)
 	if err != nil {
-		return "", fmt.Errorf("wecom userinfo: %w", err)
+		return userResp{}, fmt.Errorf("wecom userinfo: %w", err)
 	}
 	var out userResp
 	if err := json.Unmarshal(body, &out); err != nil {
-		return "", fmt.Errorf("wecom userinfo decode: %w", err)
+		return userResp{}, fmt.Errorf("wecom userinfo decode: %w", err)
 	}
-	if out.ErrCode != 0 || out.UserID == "" {
-		return "", fmt.Errorf("wecom userinfo error")
+	if out.ErrCode != 0 || out.userid() == "" {
+		return userResp{}, fmt.Errorf("wecom userinfo error")
 	}
-	return out.UserID, nil
-}
-
-func (p Production) userName(ctx context.Context, token, userid string) (string, error) {
-	u := fmt.Sprintf("https://qyapi.weixin.qq.com/cgi-bin/user/get?access_token=%s&userid=%s", url.QueryEscape(token), url.QueryEscape(userid))
-	body, err := p.HTTP.Get(ctx, u)
-	if err != nil {
-		return "", fmt.Errorf("wecom user get: %w", err)
-	}
-	var out userGetResp
-	if err := json.Unmarshal(body, &out); err != nil {
-		return "", fmt.Errorf("wecom user get decode: %w", err)
-	}
-	if out.ErrCode != 0 {
-		return "", fmt.Errorf("wecom user get error")
-	}
-	if out.Name == "" {
-		return userid, nil
-	}
-	return out.Name, nil
+	return out, nil
 }
