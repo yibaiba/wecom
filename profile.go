@@ -154,6 +154,33 @@ func identityFromUserGet(userid string, out userGetResp) Identity {
 	}
 }
 
+// ParseDirectoryUser maps a user/get JSON body onto Identity.
+func ParseDirectoryUser(userid string, body []byte) (Identity, error) {
+	var out userGetResp
+	if err := json.Unmarshal(body, &out); err != nil {
+		return Identity{}, fmt.Errorf("wecom user get decode: %w", err)
+	}
+	if userid == "" {
+		userid = out.UserID
+	}
+	return identityFromUserGet(userid, out), nil
+}
+
+// ParseDirectoryUsers maps a user/list JSON body onto identities.
+func ParseDirectoryUsers(body []byte) ([]Identity, error) {
+	var out struct {
+		UserList []userGetResp `json:"userlist"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("wecom user list decode: %w", err)
+	}
+	users := make([]Identity, 0, len(out.UserList))
+	for _, row := range out.UserList {
+		users = append(users, identityFromUserGet(row.UserID, row))
+	}
+	return users, nil
+}
+
 func (p Production) mergePrivateDetail(ctx context.Context, token, ticket string, ident Identity) Identity {
 	if p.HTTP == nil || strings.TrimSpace(ticket) == "" {
 		return ident

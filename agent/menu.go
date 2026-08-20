@@ -1,8 +1,9 @@
-package wecom
+package agent
 
 import (
 	"context"
 	"net/url"
+	"strconv"
 )
 
 // Menu is the application custom menu.
@@ -21,30 +22,25 @@ type MenuButton struct {
 	SubButton []MenuButton `json:"sub_button,omitempty"`
 }
 
+func (a *API) agentQuery() url.Values {
+	return url.Values{"agentid": {strconv.Itoa(a.App.AgentID)}}
+}
+
 // CreateMenu creates the application menu.
-func (c *Client) CreateMenu(ctx context.Context, menu Menu) error {
-	q := url.Values{}
-	q.Set("agentid", itoa(c.AgentID))
-	return c.postQuery(ctx, "/cgi-bin/menu/create", q, menu, nil)
+func (a *API) CreateMenu(ctx context.Context, menu Menu) error {
+	return a.App.PostQuery(ctx, "/cgi-bin/menu/create", a.agentQuery(), menu, nil)
 }
 
 // GetMenu returns the application menu.
-func (c *Client) GetMenu(ctx context.Context) (Menu, error) {
-	q := url.Values{}
-	q.Set("agentid", itoa(c.AgentID))
-	var out struct {
-		apiMeta
-		Menu
-	}
-	if err := c.get(ctx, "/cgi-bin/menu/get", q, &out); err != nil {
+func (a *API) GetMenu(ctx context.Context) (Menu, error) {
+	var out Menu
+	if err := a.App.GetJSON(ctx, "/cgi-bin/menu/get", a.agentQuery(), &out); err != nil {
 		return Menu{}, err
 	}
-	return out.Menu, nil
+	return out, nil
 }
 
 // DeleteMenu deletes the application menu.
-func (c *Client) DeleteMenu(ctx context.Context) error {
-	q := url.Values{}
-	q.Set("agentid", itoa(c.AgentID))
-	return c.get(ctx, "/cgi-bin/menu/delete", q, nil)
+func (a *API) DeleteMenu(ctx context.Context) error {
+	return a.App.GetJSON(ctx, "/cgi-bin/menu/delete", a.agentQuery(), nil)
 }

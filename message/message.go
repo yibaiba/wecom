@@ -1,4 +1,4 @@
-package wecom
+package message
 
 import (
 	"context"
@@ -111,36 +111,33 @@ type SendResult struct {
 }
 
 // Send pushes an application message.
-func (c *Client) Send(ctx context.Context, msg Message) (SendResult, error) {
+func (a *API) Send(ctx context.Context, msg Message) (SendResult, error) {
 	if msg.AgentID == 0 {
-		msg.AgentID = c.AgentID
+		msg.AgentID = a.App.AgentID
 	}
-	var out struct {
-		apiMeta
-		SendResult
-	}
-	if err := c.post(ctx, "/cgi-bin/message/send", msg, &out); err != nil {
+	var out SendResult
+	if err := a.App.PostJSON(ctx, "/cgi-bin/message/send", msg, &out); err != nil {
 		return SendResult{}, err
 	}
-	return out.SendResult, nil
+	return out, nil
 }
 
 // SendText sends a text message to users (pipe-separated userids, or "@all").
-func (c *Client) SendText(ctx context.Context, toUser, content string) (SendResult, error) {
-	return c.Send(ctx, Message{ToUser: toUser, MsgType: "text", Text: &TextBody{Content: content}})
+func (a *API) SendText(ctx context.Context, toUser, content string) (SendResult, error) {
+	return a.Send(ctx, Message{ToUser: toUser, MsgType: "text", Text: &TextBody{Content: content}})
 }
 
 // SendMarkdown sends a markdown message.
-func (c *Client) SendMarkdown(ctx context.Context, toUser, content string) (SendResult, error) {
-	return c.Send(ctx, Message{ToUser: toUser, MsgType: "markdown", Markdown: &TextBody{Content: content}})
+func (a *API) SendMarkdown(ctx context.Context, toUser, content string) (SendResult, error) {
+	return a.Send(ctx, Message{ToUser: toUser, MsgType: "markdown", Markdown: &TextBody{Content: content}})
 }
 
-// RecallMessage recalls a sent message by msgid.
-func (c *Client) RecallMessage(ctx context.Context, msgid string) error {
-	return c.post(ctx, "/cgi-bin/message/recall", map[string]string{"msgid": msgid}, nil)
+// Recall recalls a sent message by msgid.
+func (a *API) Recall(ctx context.Context, msgid string) error {
+	return a.App.PostJSON(ctx, "/cgi-bin/message/recall", map[string]string{"msgid": msgid}, nil)
 }
 
 // UpdateTemplateCard updates a template card using response_code from Send.
-func (c *Client) UpdateTemplateCard(ctx context.Context, payload any) error {
-	return c.post(ctx, "/cgi-bin/message/update_template_card", payload, nil)
+func (a *API) UpdateTemplateCard(ctx context.Context, payload any) error {
+	return a.App.PostJSON(ctx, "/cgi-bin/message/update_template_card", payload, nil)
 }

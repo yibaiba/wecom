@@ -4,25 +4,36 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"sync"
 	"time"
 )
 
-var apiBase = "https://qyapi.weixin.qq.com"
+// APIBase is the WeCom API origin. Tests may override it.
+var APIBase = "https://qyapi.weixin.qq.com"
 
-// Client is a WeCom self-built application. Hosts that only need login can
-// keep using Production; Client covers the rest of the app APIs.
+// Client is shared HTTP + token state. Feature APIs live in subpackages
+// (contact, agent, message, media, jsapi, callback, login).
 type Client struct {
 	CorpID  string
 	AgentID int
 	Secret  string
 	HTTP    Doer
+	// BaseURL overrides APIBase when set (tests).
+	BaseURL string
 
 	now      func() time.Time
 	mu       sync.Mutex
 	token    string
 	tokenExp time.Time
+}
+
+func (c *Client) base() string {
+	if c != nil && c.BaseURL != "" {
+		return c.BaseURL
+	}
+	return APIBase
 }
 
 // App returns a Client with the same corp credentials as Production.
@@ -74,7 +85,7 @@ func (c *Client) fetchToken(ctx context.Context) (string, time.Time, error) {
 	q := url.Values{}
 	q.Set("corpid", c.CorpID)
 	q.Set("corpsecret", c.Secret)
-	body, err := c.doer().Get(ctx, apiBase+"/cgi-bin/gettoken?"+q.Encode())
+	body, err := c.doer().Get(ctx, c.base()+"/cgi-bin/gettoken?"+q.Encode())
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("wecom token: %w", err)
 	}
@@ -95,20 +106,57 @@ func (c *Client) fetchToken(ctx context.Context) (string, time.Time, error) {
 	return out.AccessToken, c.clock().Add(time.Duration(sec) * time.Second), nil
 }
 
-func (c *Client) get(ctx context.Context, path string, query url.Values, dest any) error {
+// GetJSON GETs a cgi-bin path and decodes JSON into dest.
+func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, dest any) error {
 	return c.call(ctx, false, path, query, nil, dest)
 }
 
-func (c *Client) post(ctx context.Context, path string, payload any, dest any) error {
-	return c.postQuery(ctx, path, nil, payload, dest)
+// PostJSON POSTs JSON to a cgi-bin path.
+func (c *Client) PostJSON(ctx context.Context, path string, payload any, dest any) error {
+	return c.PostQuery(ctx, path, nil, payload, dest)
 }
 
-func (c *Client) postQuery(ctx context.Context, path string, query url.Values, payload any, dest any) error {
+// PostQuery POSTs JSON with extra query parameters (menu/create agentid).
+func (c *Client) PostQuery(ctx context.Context, path string, query url.Values, payload any, dest any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 	return c.call(ctx, true, path, query, body, dest)
+}
+
+// GetRaw GETs bytes without requiring a JSON object body (media/get).
+func (c *Client) GetRaw(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	tok, err := c.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q := cloneValues(query)
+	q.Set("access_token", tok)
+	return c.doer().Get(ctx, c.base()+path+"?"+q.Encode())
+}
+
+// PostFormFile uploads multipart form file (media/upload).
+func (c *Client) PostFormFile(ctx context.Context, path string, query url.Values, field, filename string, r io.Reader) ([]byte, error) {
+	tok, err := c.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q := cloneValues(query)
+	q.Set("access_token", tok)
+	raw := c.base() + path + "?" + q.Encode()
+	m, ok := c.doer().(interface {
+		PostMultipart(context.Context, string, string, string, io.Reader) ([]byte, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("wecom http client does not support multipart upload")
+	}
+	return m.PostMultipart(ctx, raw, field, filename, r)
+}
+
+// Decode unmarshals a WeCom JSON body and rejects non-zero errcode.
+func Decode(body []byte, dest any) error {
+	return decodeAPI(body, dest)
 }
 
 func (c *Client) call(ctx context.Context, post bool, path string, query url.Values, payload []byte, dest any) error {
@@ -125,11 +173,9 @@ func (c *Client) doCall(ctx context.Context, post bool, path string, query url.V
 	if err != nil {
 		return err
 	}
-	if query == nil {
-		query = url.Values{}
-	}
+	query = cloneValues(query)
 	query.Set("access_token", tok)
-	raw := apiBase + path + "?" + query.Encode()
+	raw := c.base() + path + "?" + query.Encode()
 	var body []byte
 	if post {
 		body, err = c.doer().Post(ctx, raw, payload)
@@ -165,4 +211,12 @@ func decodeAPI(body []byte, dest any) error {
 		return fmt.Errorf("wecom decode: %w", err)
 	}
 	return nil
+}
+
+func cloneValues(q url.Values) url.Values {
+	out := url.Values{}
+	for k, vs := range q {
+		out[k] = append([]string{}, vs...)
+	}
+	return out
 }

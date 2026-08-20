@@ -14,10 +14,9 @@ func (c *Client) CallbackIPs(ctx context.Context) ([]string, error) {
 
 func (c *Client) ipList(ctx context.Context, path string) ([]string, error) {
 	var out struct {
-		apiMeta
 		IPList []string `json:"ip_list"`
 	}
-	if err := c.get(ctx, path, nil, &out); err != nil {
+	if err := c.GetJSON(ctx, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return out.IPList, nil
