@@ -22,13 +22,17 @@ type tokenResp struct {
 }
 
 type userResp struct {
-	ErrCode    int    `json:"errcode"`
-	ErrMsg     string `json:"errmsg"`
-	UserID     string `json:"UserId"`
-	UserIDAlt  string `json:"userid"`
-	DeviceID   string `json:"DeviceId"`
-	OpenUserID string `json:"open_userid"`
-	UserTicket string `json:"user_ticket"`
+	ErrCode        int    `json:"errcode"`
+	ErrMsg         string `json:"errmsg"`
+	UserID         string `json:"UserId"`
+	UserIDAlt      string `json:"userid"`
+	DeviceID       string `json:"DeviceId"`
+	OpenUserID     string `json:"open_userid"`
+	UserTicket     string `json:"user_ticket"`
+	UserDocTicket  string `json:"user_doc_ticket"`
+	OpenID         string `json:"OpenId"`
+	OpenIDAlt      string `json:"openid"`
+	ExternalUserID string `json:"external_userid"`
 }
 
 func (u userResp) userid() string {
@@ -38,13 +42,17 @@ func (u userResp) userid() string {
 	return strings.TrimSpace(u.UserIDAlt)
 }
 
+func (u userResp) openid() string {
+	return firstNonEmpty(u.OpenID, u.OpenIDAlt)
+}
+
 type poster interface {
 	Post(ctx context.Context, rawURL string, body []byte) ([]byte, error)
 }
 
-// Exchange redeems a WeCom code for member identity, including directory
-// email/avatar when the app can read the address book. snsapi_privateinfo
-// codes also fill gaps via getuserdetail.
+// Exchange redeems a WeCom code for member identity. It maps every field
+// user/get, getuserinfo, and getuserdetail return. snsapi_privateinfo codes
+// overlay sensitive fields via getuserdetail. Non-members return OpenID.
 func (p Production) Exchange(ctx context.Context, code string) (Identity, error) {
 	if p.HTTP == nil {
 		return Identity{}, fmt.Errorf("wecom http client is not configured")
@@ -57,10 +65,19 @@ func (p Production) Exchange(ctx context.Context, code string) (Identity, error)
 	if err != nil {
 		return Identity{}, err
 	}
-	ident, err := p.directoryProfile(ctx, token, info.userid())
+	return p.identityFromAuth(ctx, token, info)
+}
+
+func (p Production) identityFromAuth(ctx context.Context, token string, info userResp) (Identity, error) {
+	userid := info.userid()
+	if userid == "" {
+		return applyAuthFields(Identity{}, info), nil
+	}
+	ident, err := p.directoryProfile(ctx, token, userid)
 	if err != nil {
 		return Identity{}, err
 	}
+	ident = applyAuthFields(ident, info)
 	if info.UserTicket != "" {
 		ident = p.mergePrivateDetail(ctx, token, info.UserTicket, ident)
 	}
@@ -68,6 +85,19 @@ func (p Production) Exchange(ctx context.Context, code string) (Identity, error)
 		ident.Name = ident.UserID
 	}
 	return ident, nil
+}
+
+func applyAuthFields(ident Identity, info userResp) Identity {
+	ident.DeviceID = firstNonEmpty(info.DeviceID, ident.DeviceID)
+	ident.OpenUserID = firstNonEmpty(ident.OpenUserID, info.OpenUserID)
+	ident.UserTicket = firstNonEmpty(info.UserTicket, ident.UserTicket)
+	ident.UserDocTicket = firstNonEmpty(info.UserDocTicket, ident.UserDocTicket)
+	ident.OpenID = firstNonEmpty(info.openid(), ident.OpenID)
+	ident.ExternalUserID = firstNonEmpty(info.ExternalUserID, ident.ExternalUserID)
+	if ident.UserID == "" {
+		ident.UserID = info.userid()
+	}
+	return ident
 }
 
 func (p Production) corpToken(ctx context.Context) (string, error) {
@@ -96,7 +126,10 @@ func (p Production) userFromCode(ctx context.Context, token, code string) (userR
 	if err := json.Unmarshal(body, &out); err != nil {
 		return userResp{}, fmt.Errorf("wecom userinfo decode: %w", err)
 	}
-	if out.ErrCode != 0 || out.userid() == "" {
+	if out.ErrCode != 0 {
+		return userResp{}, fmt.Errorf("wecom userinfo error")
+	}
+	if out.userid() == "" && out.openid() == "" && strings.TrimSpace(out.ExternalUserID) == "" {
 		return userResp{}, fmt.Errorf("wecom userinfo error")
 	}
 	return out, nil
