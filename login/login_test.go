@@ -26,7 +26,7 @@ func TestWritePhoneQRPageUsesHostPaths(t *testing.T) {
 	rec := httptest.NewRecorder()
 	WritePhoneQRPage(rec, "https://open.weixin.qq.com/connect/oauth2/authorize?scope=snsapi_privateinfo", "/auth/wecom/status", "/auth/wecom/continue")
 	body := rec.Body.String()
-	if !strings.Contains(body, "请用手机企业微信扫码") || !strings.Contains(body, "snsapi_privateinfo") {
+	if !strings.Contains(body, "请使用手机企业微信扫码") || !strings.Contains(body, "snsapi_privateinfo") {
 		t.Fatalf("qr page %s", body)
 	}
 	if !strings.Contains(body, "/auth/wecom/status") || !strings.Contains(body, "/auth/wecom/continue") {

@@ -23,19 +23,27 @@ func WritePhoneQRPage(w http.ResponseWriter, authorize, statusPath, continuePath
 		http.Error(w, "failed to render QR", http.StatusInternalServerError)
 		return
 	}
+	// The script carries the host's poll paths, so it is assembled first and the
+	// policy is derived from that same string.
+	script := strings.NewReplacer(
+		"__STATUS_PATH__", jsonString(statusPath),
+		"__CONTINUE_PATH__", jsonString(continuePath),
+	).Replace(phoneQRScript)
+	page := strings.NewReplacer(
+		"__WECOM_AUTH__", jsonString(authorize),
+		"__QR_DATA_URI__", img,
+		"__PHONE_QR_SCRIPT__", script,
+	).Replace(phoneQRHTML)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	page := phoneQRHTML
-	page = strings.Replace(page, "__WECOM_AUTH__", jsonString(authorize), 1)
-	page = strings.Replace(page, "__QR_DATA_URI__", img, 1)
-	page = strings.Replace(page, "__STATUS_PATH__", jsonString(statusPath), 1)
-	page = strings.Replace(page, "__CONTINUE_PATH__", jsonString(continuePath), 1)
+	w.Header().Set("Content-Security-Policy", pagePolicy(script))
 	_, _ = w.Write([]byte(page))
 }
 
 // WriteEnrollDonePage tells the phone browser to return to the desktop.
 func WriteEnrollDonePage(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", pagePolicy())
 	_, _ = w.Write([]byte(enrollDoneHTML))
 }
 
@@ -73,12 +81,16 @@ img.qr{margin:16px auto;display:block;width:260px;height:260px}
 </head>
 <body>
 <div class="wrap">
-<h1>请用手机企业微信扫码</h1>
-<p>系统里还没有这个人，需要手机扫码完成登录。</p>
+<h1>请使用手机企业微信扫码</h1>
 <img class="qr" width="260" height="260" alt="企业微信授权二维码" data-authorize=__WECOM_AUTH__ src="__QR_DATA_URI__">
 <p id="status">等待手机授权…</p>
 </div>
-<script>
+<script>__PHONE_QR_SCRIPT__</script>
+</body>
+</html>
+`
+
+const phoneQRScript = `
 (function(){
   function poll(){
     fetch(__STATUS_PATH__,{credentials:"same-origin"}).then(function(r){return r.json()}).then(function(j){
@@ -88,7 +100,4 @@ img.qr{margin:16px auto;display:block;width:260px;height:260px}
   }
   poll();
 })();
-</script>
-</body>
-</html>
 `

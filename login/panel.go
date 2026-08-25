@@ -21,9 +21,16 @@ func WriteLoginPanel(w http.ResponseWriter, app App, state, callback string) {
 		http.Error(w, "wecom login is not configured", http.StatusInternalServerError)
 		return
 	}
+	// The boot payload carries this request's state, so the policy is derived from
+	// the assembled string rather than a precomputed hash.
+	boot := `window.__WECOM__=` + string(payload) + `;`
+	page := strings.NewReplacer(
+		"__WECOM_BOOT__", boot,
+		"__WECOM_MOUNT__", panelMountScript,
+	).Replace(loginPanelHTML)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	page := strings.Replace(loginPanelHTML, "__WECOM_JSON__", string(payload), 1)
+	w.Header().Set("Content-Security-Policy", panelPolicy(boot, panelMountScript))
 	_, _ = w.Write([]byte(page))
 }
 
@@ -49,8 +56,16 @@ p{color:#666;font-size:14px;line-height:1.5}
 <p id="status">正在创建企业微信登录组件。</p>
 <div id="panel"></div>
 </div>
-<script>window.__WECOM__=__WECOM_JSON__;</script>
-<script>
+<script>__WECOM_BOOT__</script>
+<script>__WECOM_MOUNT__</script>
+</body>
+</html>
+`
+
+// panelMountScript is kept whole and separate so the policy can hash the exact
+// text the page ships. It is static: per-request values arrive through the boot
+// payload above.
+const panelMountScript = `
 (function(){
   var cfg=window.__WECOM__||{};
   var status=document.getElementById("status");
@@ -81,12 +96,12 @@ p{color:#666;font-size:14px;line-height:1.5}
       onCheckWeComLogin:function(ev){
         status.className="";
         status.textContent=ev.isWeComLogin
-          ?"已检测到企业微信客户端，请在官方登录组件中确认。"
-          :"未检测到企业微信客户端，请在官方登录组件中扫码登录。";
+          ?"已检测到企业微信。可在本页扫码，或在客户端里确认登录。"
+          :"请在本页扫码登录。";
       },
       onOpenInWecom:function(){
         status.className="";
-        status.textContent="已检测到企业微信客户端，请在官方登录组件中确认。";
+        status.textContent="已打开企业微信，请在客户端内确认登录。";
       },
       onLoginSuccess:function(res){ go(res.code); },
       onLoginFail:function(err){ fail((err&&err.errMsg)||"企业微信登录组件授权失败"); }
@@ -105,7 +120,4 @@ p{color:#666;font-size:14px;line-height:1.5}
   s.onerror=function(){ fail("企业微信登录组件加载失败"); };
   document.head.appendChild(s);
 })();
-</script>
-</body>
-</html>
 `

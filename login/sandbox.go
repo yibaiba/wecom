@@ -16,6 +16,7 @@ func WriteSandboxPicker(w http.ResponseWriter, state, callbackPath string, users
 		callbackPath = CallbackPath
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", pagePolicy())
 	var b strings.Builder
 	b.WriteString("<html><body><h1>Sandbox WeCom</h1><ul>")
 	for _, u := range users {
